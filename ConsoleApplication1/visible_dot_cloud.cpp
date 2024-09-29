@@ -6,9 +6,9 @@
 * 
 * @author: 地信221 黄华杰 32216160165
 * 
-* @version: 1.0
+* @version: 1.1
 * 
-* @update: 2024/09/28 14:38
+* @update: 2024/09/29 23:38
 * 
 * @example: 示例数据位于 "d:/Users/admin/Downloads/chromedownload/dotcloud" 目录下
 * @example: 示例数据包括 "AA.las"、"rabbit.pcd"、"stgallencathedral_station1_intensity_rgb.txt"、"xyzrgb_dragon.ply"
@@ -478,7 +478,6 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
         std::cerr << "Unsupported field or field not found in the PCD file: " << field << std::endl;
     }
 }
-
 
  /**
   * @brief 可视化LAS文件
@@ -1088,16 +1087,6 @@ void visualizePointCloud(const std::string& filePath, const std::string& showTyp
         std::cerr << "Unsupported file format!" << std::endl;
     }
 }
-
-#include <pdal/PointTable.hpp>
-#include <pdal/PointView.hpp>
-#include <pdal/Options.hpp>
-#include <pcl/point_cloud.h>
-#include <pcl/point_types.h>
-#include <pcl/io/pcd_io.h>
-#include <iostream>
-#include <fstream>
-#include <string>
 
 /**
  * @brief 将PLS文件转换为PCD文件
