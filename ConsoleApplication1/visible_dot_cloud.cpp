@@ -747,7 +747,8 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
 
     // 创建 CSV 文件
     std::ofstream csvFile(R"(d:\Users\admin\Downloads\chromedownload\dotcloud\point_cloud_data.csv)");
-    csvFile << "PointID,X,Y,Z,Intensity\n";
+    //csvFile << "PointID,X,Y,Z,Intensity\n";
+    csvFile << "PointID,X,Y,Z,Intensity,Classification\n";
 
     // 第二遍遍历，应用坐标转换，填充PCL点云，并计算转换后的最小和最大值
     for (pdal::PointId i = 0; i < view->size(); ++i) {
@@ -757,6 +758,8 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
         float x = view->getFieldAs<float>(pdal::Dimension::Id::X, i);
         float y = view->getFieldAs<float>(pdal::Dimension::Id::Y, i);
         float z = view->getFieldAs<float>(pdal::Dimension::Id::Z, i);
+
+        uint8_t classification = view->getFieldAs<uint8_t>(pdal::Dimension::Id::Classification, i);
 
         // 根据 coordinateType 应用转换
         if (coordinateType == "shifted box center") {
@@ -796,7 +799,8 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
             point.b = intensityColor;
 
             // 写入 CSV 文件
-            csvFile << i << "," << x << "," << y << "," << z << "," << intensity << "\n";
+            //csvFile << i << "," << x << "," << y << "," << z << "," << intensity << "\n";
+            csvFile << i << "," << x << "," << y << "," << z << "," << intensity << "," << static_cast<int>(classification) << "\n";
         }
         else if (field == "rgb") {
             // 检查RGB字段是否存在
@@ -1426,14 +1430,15 @@ int main(int argc, char** argv)
 
 	//当文件为.las时可选择显示类型
     // 可选值为 "intensity" 或 "rgb"
-	//std::string showType = "intensity";
-    std::string showType = "rgb";
+	std::string showType = "intensity";
+    //std::string showType = "rgb";
     
 	// 可选值为 "shifted box center", "global box center"，也就是是否进行偏移
 	std::string coordinateType = "global box center";
 
 	// 是否进行高程匀质区标记
-	std::string iselevationHomogeneity = "true";
+	//std::string iselevationHomogeneity = "true";
+    std::string iselevationHomogeneity = "true";
 
     if (extension == "las" && convertPLS)
     {
