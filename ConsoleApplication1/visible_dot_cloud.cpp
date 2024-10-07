@@ -4,17 +4,27 @@
 * @desc: 本代码用于读取并可视化点云文件，支持的文件格式包括PCD、LAS、TXT、PLY
 * @desc: 本代码使用PCL库和PDAL库，需要在项目中引入PCL和PDAL库
 * 
-* @author: 地信221 黄华杰 32216160165
+* @version: 1.2
 * 
-* @version: 1.1
-* 
-* @update: 2024/09/29 23:38
+* @update: 2024/10/07 11:11
+* @update_desc: 增加了高程匀质区的计算功能，并优化了点云数据的可视化效果
 * 
 * @example: 示例数据位于 "d:/Users/admin/Downloads/chromedownload/dotcloud" 目录下
 * @example: 示例数据包括 "AA.las"、"rabbit.pcd"、"stgallencathedral_station1_intensity_rgb.txt"、"xyzrgb_dragon.ply"
 * @example: 示例数据可以通过修改 filePath 变量来选择不同的文件进行测试
 * @example: 示例数据目前.las,.pcd实现功能较多，可以修改颜色选择，如强度和色彩标签，具有一定的鲁棒性。
 * @example：而.txt,.ply只能根据z值设置颜色，功能较少，后续可以继续完善。
+* 
+* @todo: 优化点云数据的加载速度，减少内存占用
+* @todo: 增加对点云数据的滤波和降噪功能
+* @todo：目前代码比较屎山，后续需要重构和优化
+* 
+* @note: 使用本代码时，请确保已安装PCL和PDAL库，并正确配置环境变量
+* 
+* @see: PCL文档：https://pointclouds.org/documentation/
+* @see: PDAL文档：https://pdal.io/
+* 
+* * @author: 地信221 AA胖虎
 */
 #include <iostream>
 #include <memory>
@@ -32,7 +42,7 @@
 #include <pcl/io/ply_io.h>
 #include <pdal/Metadata.hpp>
 #include <pdal/io/LasHeader.hpp>
-
+#include <pcl/kdtree/kdtree_flann.h>
 
 /**
  * @brief 读取PCD文件，判断是否包含RGB字段
@@ -113,7 +123,7 @@ bool hasIntensityField(const std::string& pcdFilePath)
  * @param field 可视化字段，可选值为 "rgb" 或 "intensity"
  * @param coordinateType 坐标类型，可选值为 "shifted box center" 或 "global box center"
  */
-void visualizePCD(const std::string& pcdFilePath, const std::string& field, const std::string& coordinateType)
+void visualizePCD(const std::string& pcdFilePath, const std::string& field, const std::string& coordinateType, const std::string& iselevationHomogeneity)
 {
     bool hasRGB = hasRGBField(pcdFilePath);
     bool hasIntensity = hasIntensityField(pcdFilePath);
@@ -130,11 +140,11 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
     int lineCount = 0;
 
     // 打印前十行
-    /*while (std::getline(txtFile, line) && lineCount < 10)
+    while (std::getline(txtFile, line) && lineCount < 10)
     {
         std::cout << line << std::endl;
         lineCount++;
-    }*/
+    }
 
     // 重置文件流位置
     txtFile.clear();
@@ -196,6 +206,48 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
         // 打印点云范围
         std::cout << "Point cloud range: X[" << minPt.x << ", " << maxPt.x << "], Y[" << minPt.y << ", " << maxPt.y << "], Z[" << minPt.z << ", " << maxPt.z << "]" << std::endl;
 
+        // 计算高程匀质区
+        if (iselevationHomogeneity == "true") {
+            // 创建 KD-Tree 对象用于邻域搜索
+            pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree;
+            kdtree.setInputCloud(cloudRGB);
+            // 定义高程匀质区的标准差阈值
+            const float elevationHomogeneityThreshold = 0.1f; // 根据实际情况调整
+
+            // 计算高程匀质区
+            for (size_t i = 0; i < cloudRGB->points.size(); ++i) {
+                pcl::PointXYZRGB searchPoint = cloudRGB->points[i];
+
+                float radius = 1.0f; // 搜索半径
+                std::vector<int> pointIdxRadiusSearch;
+                std::vector<float> pointRadiusSquaredDistance;
+                if (kdtree.radiusSearch(searchPoint, radius, pointIdxRadiusSearch, pointRadiusSquaredDistance) > 0) {
+                    // 获取邻域点的 Z 值
+                    std::vector<float> zValues;
+                    for (size_t j = 0; j < pointIdxRadiusSearch.size(); ++j) {
+                        zValues.push_back(cloudRGB->points[pointIdxRadiusSearch[j]].z);
+                    }
+
+                    // 计算 Z 值的标准差
+                    float meanZ = std::accumulate(zValues.begin(), zValues.end(), 0.0f) / zValues.size();
+                    float varianceZ = 0.0f;
+                    for (const auto& z : zValues) {
+                        varianceZ += (z - meanZ) * (z - meanZ);
+                    }
+                    varianceZ /= zValues.size();
+                    float stddevZ = std::sqrt(varianceZ);
+
+                    // 判断是否为高程匀质区
+                    if (stddevZ < elevationHomogeneityThreshold) {
+                        // 标记该点为高程匀质区
+                        cloudRGB->points[i].r = 0;
+                        cloudRGB->points[i].g = 255;
+                        cloudRGB->points[i].b = 0;
+                    }
+                }
+            }
+        }
+
         // 创建PCL可视化对象
         boost::shared_ptr<pcl::visualization::PCLVisualizer> viewer(new pcl::visualization::PCLVisualizer("3D Viewer"));
         viewer->setBackgroundColor(0, 0, 0); // 设置背景颜色为黑色
@@ -237,7 +289,7 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
         viewer->setCameraPosition(center.x, center.y, maxPt.z + (maxPt.z - minPt.z), center.x, center.y, center.z, 0, 1, 0);
 
         // 打印前10个点的坐标，使用高精度和表格格式
-        std::cout << "------------First 30 Points:------------" << std::endl;
+        std::cout << "------------First 1000 Points:------------" << std::endl;
 
         // Define column widths
         const int pointColWidth = 15;
@@ -263,7 +315,7 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
             << std::string(rgbColWidth, '-') << std::endl;
 
         // Print points
-        for (size_t i = 0; i < std::min<size_t>(30, cloudRGB->points.size()); ++i)
+        for (size_t i = 0; i < std::min<size_t>(1000, cloudRGB->points.size()); ++i)
         {
             std::cout << std::left << std::setw(pointColWidth) << i << " | "
                 << std::fixed << std::setprecision(6) << std::setw(coordColWidth) << cloudRGB->points[i].x << " | "
@@ -397,6 +449,47 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
         cloudRGBI->height = 1;
         cloudRGBI->is_dense = cloudI->is_dense;
 
+        if (iselevationHomogeneity == "true") {
+            // 创建 KD-Tree 对象用于邻域搜索
+            pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree;
+            kdtree.setInputCloud(cloudRGBI);
+            // 定义高程匀质区的标准差阈值
+            const float elevationHomogeneityThreshold = 0.1f; // 根据实际情况调整
+
+            // 计算高程匀质区
+            for (size_t i = 0; i < cloudRGBI->points.size(); ++i) {
+                pcl::PointXYZRGB searchPoint = cloudRGBI->points[i];
+
+                float radius = 1.0f; // 搜索半径
+                std::vector<int> pointIdxRadiusSearch;
+                std::vector<float> pointRadiusSquaredDistance;
+                if (kdtree.radiusSearch(searchPoint, radius, pointIdxRadiusSearch, pointRadiusSquaredDistance) > 0) {
+                    // 获取邻域点的 Z 值
+                    std::vector<float> zValues;
+                    for (size_t j = 0; j < pointIdxRadiusSearch.size(); ++j) {
+                        zValues.push_back(cloudRGBI->points[pointIdxRadiusSearch[j]].z);
+                    }
+
+                    // 计算 Z 值的标准差
+                    float meanZ = std::accumulate(zValues.begin(), zValues.end(), 0.0f) / zValues.size();
+                    float varianceZ = 0.0f;
+                    for (const auto& z : zValues) {
+                        varianceZ += (z - meanZ) * (z - meanZ);
+                    }
+                    varianceZ /= zValues.size();
+                    float stddevZ = std::sqrt(varianceZ);
+
+                    // 判断是否为高程匀质区
+                    if (stddevZ < elevationHomogeneityThreshold) {
+                        // 标记该点为高程匀质区
+                        cloudRGBI->points[i].r = 0;
+                        cloudRGBI->points[i].g = 255;
+                        cloudRGBI->points[i].b = 0;
+                    }
+                }
+            }
+        }
+
         try
         {
             // 使用RGB颜色字段
@@ -434,7 +527,7 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
         viewer->setCameraPosition(center.x, center.y, maxPt.z + (maxPt.z - minPt.z), center.x, center.y, center.z, 0, 1, 0);
 
         // 打印前10个点的坐标，使用高精度和表格格式
-        std::cout << "------------First 30 Points:------------" << std::endl;
+        std::cout << "------------First 1000 Points:------------" << std::endl;
 
 		// 默认列宽
         const int pointColWidthI = 15;
@@ -456,7 +549,7 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
             << std::string(intensityColWidthI, '-') << std::endl;
 
 		// 打印点
-        for (size_t i = 0; i < std::min<size_t>(30, cloudI->points.size()); ++i)
+        for (size_t i = 0; i < std::min<size_t>(1000, cloudI->points.size()); ++i)
         {
             std::cout << std::left << std::setw(pointColWidthI) << i << " | "
                 << std::fixed << std::setprecision(6) << std::setw(coordColWidthI) << cloudI->points[i].x << " | "
@@ -495,7 +588,7 @@ void visualizePCD(const std::string& pcdFilePath, const std::string& field, cons
   * - 如果LAS文件不包含RGB或Intensity字段，将使用Z值进行彩虹色渲染
   * - 如果LAS文件不包含RGB或Intensity字段，且Z值无法使用彩虹色渲染，将使用Z值进行灰度渲染
   */
-void visualizeLAS(const std::string& lasFilePath, const std::string& field, const std::string& coordinateType)
+void visualizeLAS(const std::string& lasFilePath, const std::string& field, const std::string& coordinateType, const std::string& iselevationHomogeneity)
 {
     std::cout << "Starting visualization of LAS file: " << lasFilePath << std::endl;
 
@@ -545,6 +638,28 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
     // 获取点云视图
     pdal::PointViewPtr view = *viewSet.begin();
     pcl::PointCloud<pcl::PointXYZRGB>::Ptr cloud(new pcl::PointCloud<pcl::PointXYZRGB>);
+
+    // 读取LAS头信息
+    try {
+        const pdal::LasHeader& header = reader.header();
+        std::cout << "LAS Header Information:" << std::endl;
+        std::cout << "File Signature: " << header.fileSignature() << std::endl;
+        std::cout << "Version: " << header.versionMajor() << "." << header.versionMinor() << std::endl;
+        std::cout << "System Identifier: " << header.systemId() << std::endl;
+        std::cout << "Generating Software: " << header.softwareId() << std::endl;
+        std::cout << "Creation Date: " << header.creationDOY() << "/" << header.creationYear() << std::endl;
+        std::cout << "Point Format: " << static_cast<int>(header.pointFormat()) << std::endl;
+		std::cout << "Coordinate Reference System: " << header.srs() << std::endl;
+        std::cout << "Projected id:" << header.projectId() << endl;
+        std::cout << "Number of Points: " << header.pointCount() << std::endl;
+        std::cout << "Scale Factors: " << header.scaleX() << ", " << header.scaleY() << ", " << header.scaleZ() << std::endl;
+        std::cout << "Offsets: " << header.offsetX() << ", " << header.offsetY() << ", " << header.offsetZ() << std::endl;
+        std::cout << "Min Bounds: " << header.minX() << ", " << header.minY() << ", " << header.minZ() << std::endl;
+        std::cout << "Max Bounds: " << header.maxX() << ", " << header.maxY() << ", " << header.maxZ() << std::endl;
+    }
+    catch (const std::exception& e) {
+        std::cerr << "Error retrieving LAS header information: " << e.what() << std::endl;
+    }
 
     // 初始化原始边界值
     float orig_minX = std::numeric_limits<float>::max();
@@ -630,6 +745,10 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
 
     std::cout << "Converting PDAL point cloud data to PCL point cloud data and applying coordinate transformations..." << std::endl;
 
+    // 创建 CSV 文件
+    std::ofstream csvFile(R"(d:\Users\admin\Downloads\chromedownload\dotcloud\point_cloud_data.csv)");
+    csvFile << "PointID,X,Y,Z,Intensity\n";
+
     // 第二遍遍历，应用坐标转换，填充PCL点云，并计算转换后的最小和最大值
     for (pdal::PointId i = 0; i < view->size(); ++i) {
         pcl::PointXYZRGB point;
@@ -675,6 +794,9 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
             point.r = intensityColor;
             point.g = intensityColor;
             point.b = intensityColor;
+
+            // 写入 CSV 文件
+            csvFile << i << "," << x << "," << y << "," << z << "," << intensity << "\n";
         }
         else if (field == "rgb") {
             // 检查RGB字段是否存在
@@ -706,6 +828,47 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
 
     std::cout << "Number of points in cloud: " << cloud->points.size() << std::endl;
 
+    if (iselevationHomogeneity == "true") {
+        // 创建 KD-Tree 对象用于邻域搜索
+        pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree;
+        kdtree.setInputCloud(cloud);
+        // 定义高程匀质区的标准差阈值
+        const float elevationHomogeneityThreshold = 0.1f; // 根据实际情况调整
+
+        // 计算高程匀质区
+        for (size_t i = 0; i < cloud->points.size(); ++i) {
+            pcl::PointXYZRGB searchPoint = cloud->points[i];
+
+            float radius = 1.0f; // 搜索半径
+            std::vector<int> pointIdxRadiusSearch;
+            std::vector<float> pointRadiusSquaredDistance;
+            if (kdtree.radiusSearch(searchPoint, radius, pointIdxRadiusSearch, pointRadiusSquaredDistance) > 0) {
+                // 获取邻域点的 Z 值
+                std::vector<float> zValues;
+                for (size_t j = 0; j < pointIdxRadiusSearch.size(); ++j) {
+                    zValues.push_back(cloud->points[pointIdxRadiusSearch[j]].z);
+                }
+
+                // 计算 Z 值的标准差
+                float meanZ = std::accumulate(zValues.begin(), zValues.end(), 0.0f) / zValues.size();
+                float varianceZ = 0.0f;
+                for (const auto& z : zValues) {
+                    varianceZ += (z - meanZ) * (z - meanZ);
+                }
+                varianceZ /= zValues.size();
+                float stddevZ = std::sqrt(varianceZ);
+
+                // 判断是否为高程匀质区
+                if (stddevZ < elevationHomogeneityThreshold) {
+                    // 标记该点为高程匀质区
+                    cloud->points[i].r = 0;
+                    cloud->points[i].g = 255;
+                    cloud->points[i].b = 0;
+                }
+            }
+        }
+    }
+
     // 打印转换后的 Bounding Box
     std::cout << "Transformed Bounding Box:" << std::endl;
     std::cout << "X: [" << trans_minX << ", " << trans_maxX << "]" << std::endl;
@@ -713,7 +876,7 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
     std::cout << "Z: [" << trans_minZ << ", " << trans_maxZ << "]" << std::endl;
 
     // 打印前30个点的坐标
-    std::cout << "------------First 30 Points:------------" << std::endl;
+    std::cout << "------------First 3000 Points:------------" << std::endl;
 
     // 定义列宽
     const int pointColWidth = 15;
@@ -735,7 +898,7 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
             << std::string(coordColWidth, '-') << "-|-"
             << std::string(intensityColWidth, '-') << std::endl;
 
-        for (size_t i = 0; i < std::min<size_t>(30, cloud->points.size()); ++i)
+        for (size_t i = 0; i < std::min<size_t>(3000, cloud->points.size()); ++i)
         {
             std::cout << std::left << std::setw(pointColWidth) << i << " | "
                 << std::fixed << std::setprecision(6) << std::setw(coordColWidth) << cloud->points[i].x << " | "
@@ -1058,19 +1221,19 @@ void visualizePLY(const std::string& plyFilePath)
  * - 如果文件格式为TXT，将根据z值设置颜色进行可视化
  * - 如果文件格式为PLY，将根据z值设置颜色进行可视化
 */
-void visualizePointCloud(const std::string& filePath, const std::string& showType, const std::string& coordinateType)
+void visualizePointCloud(const std::string& filePath, const std::string& showType, const std::string& coordinateType, const std::string& iselevationHomogeneity)
 {
     // 获取文件后缀
     std::string extension = filePath.substr(filePath.find_last_of(".") + 1);
     if (extension == "pcd")
     {
         std::cout << "The file is pcd file" << endl;
-		visualizePCD(filePath, showType, coordinateType); 
+        visualizePCD(filePath, showType, coordinateType, iselevationHomogeneity);
     }
     else if (extension == "las")
     {
         std::cout << "The file is las file" << endl;
-		visualizeLAS(filePath, showType, coordinateType);
+		visualizeLAS(filePath, showType, coordinateType, iselevationHomogeneity);
     }
     else if (extension == "txt")
     {
@@ -1255,17 +1418,22 @@ int main(int argc, char** argv)
 
     // 是否进行PLS到PCD的转换
     // 设置为 true 进行转换，设置为 false 跳过转换
-    bool convertPLS = true; 
+    //bool convertPLS = true; 
+	bool convertPLS = false;
 
     // 获取文件后缀
     std::string extension = filePath.substr(filePath.find_last_of(".") + 1);
 
 	//当文件为.las时可选择显示类型
     // 可选值为 "intensity" 或 "rgb"
-	std::string showType = "rgb";
+	//std::string showType = "intensity";
+    std::string showType = "rgb";
     
 	// 可选值为 "shifted box center", "global box center"，也就是是否进行偏移
-	std::string coordinateType = "shifted box center";
+	std::string coordinateType = "global box center";
+
+	// 是否进行高程匀质区标记
+	std::string iselevationHomogeneity = "true";
 
     if (extension == "las" && convertPLS)
     {
@@ -1274,13 +1442,13 @@ int main(int argc, char** argv)
         if (!pcdFilePath.empty())
         {
             // 可视化转换后的点云文件
-			visualizePointCloud(pcdFilePath, showType, coordinateType);
+			visualizePointCloud(pcdFilePath, showType, coordinateType, iselevationHomogeneity);
         }
     }
     else
     {
         // 可视化点云文件（不进行转换）
-		visualizePointCloud(filePath, showType, coordinateType);
+		visualizePointCloud(filePath, showType, coordinateType, iselevationHomogeneity);
     }
 
     return 0;
