@@ -837,7 +837,9 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
         pcl::KdTreeFLANN<pcl::PointXYZRGB> kdtree;
         kdtree.setInputCloud(cloud);
         // 定义高程匀质区的标准差阈值
-        const float elevationHomogeneityThreshold = 0.1f; // 根据实际情况调整
+        const float elevationHomogeneityThreshold1 = 0.05f; // 根据实际情况调整
+        const float elevationHomogeneityThreshold2 = 0.1f;  // 根据实际情况调整
+        const float elevationHomogeneityThreshold3 = 0.2f;  // 根据实际情况调整
 
         // 计算高程匀质区
         for (size_t i = 0; i < cloud->points.size(); ++i) {
@@ -862,11 +864,29 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
                 varianceZ /= zValues.size();
                 float stddevZ = std::sqrt(varianceZ);
 
-                // 判断是否为高程匀质区
-                if (stddevZ < elevationHomogeneityThreshold) {
-                    // 标记该点为高程匀质区
+                // 判断是否为高程匀质区，并根据标准差设置不同的颜色
+                if (stddevZ < elevationHomogeneityThreshold1) {
+                    // 标记该点为高程匀质区，颜色为绿色
                     cloud->points[i].r = 0;
                     cloud->points[i].g = 255;
+                    cloud->points[i].b = 0;
+                }
+                else if (stddevZ < elevationHomogeneityThreshold2) {
+                    // 标记该点为高程匀质区，颜色为黄色
+                    cloud->points[i].r = 255;
+                    cloud->points[i].g = 255;
+                    cloud->points[i].b = 0;
+                }
+                else if (stddevZ < elevationHomogeneityThreshold3) {
+                    // 标记该点为高程匀质区，颜色为橙色
+                    cloud->points[i].r = 255;
+                    cloud->points[i].g = 165;
+                    cloud->points[i].b = 0;
+                }
+                else {
+                    // 标记该点为高程匀质区，颜色为红色
+                    cloud->points[i].r = 255;
+                    cloud->points[i].g = 0;
                     cloud->points[i].b = 0;
                 }
             }
@@ -902,7 +922,7 @@ void visualizeLAS(const std::string& lasFilePath, const std::string& field, cons
             << std::string(coordColWidth, '-') << "-|-"
             << std::string(intensityColWidth, '-') << std::endl;
 
-        for (size_t i = 0; i < std::min<size_t>(3000, cloud->points.size()); ++i)
+        for (size_t i = 0; i < std::min<size_t>(30, cloud->points.size()); ++i)
         {
             std::cout << std::left << std::setw(pointColWidth) << i << " | "
                 << std::fixed << std::setprecision(6) << std::setw(coordColWidth) << cloud->points[i].x << " | "
@@ -1415,7 +1435,7 @@ std::string convertPLSToPCD(const std::string& plsFilePath, const std::string& f
 int main(int argc, char** argv)
 {
     // 硬编码文件路径，测试用例
-    std::string filePath = "d:/Users/admin/Downloads/chromedownload/dotcloud/BB.las";
+    std::string filePath = "d:/Users/admin/Downloads/chromedownload/dotcloud/map.las";
     //std::string filePath = "d:/Users/admin/Downloads/chromedownload/dotcloud/rabbit.pcd";
     //std::string filePath = "d:/Users/admin/Downloads/chromedownload/dotcloud/stgallencathedral_station1_intensity_rgb.txt";
     //std::string filePath = "d:/Users/admin/Downloads/chromedownload/dotcloud/xyzrgb_dragon.ply";
@@ -1438,7 +1458,7 @@ int main(int argc, char** argv)
 
 	// 是否进行高程匀质区标记
 	//std::string iselevationHomogeneity = "true";
-    std::string iselevationHomogeneity = "true";
+    std::string iselevationHomogeneity = "false";
 
     if (extension == "las" && convertPLS)
     {
